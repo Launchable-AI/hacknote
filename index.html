@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HACKNOTE // Project Management</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-icon">&#x2B21;</span>
+          <span class="logo-text">HACKNOTE</span>
+        </div>
+        <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">&#x2630;</button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-header">
+          <span class="section-title">WORKSPACES</span>
+          <button class="section-add" id="addWorkspace" title="Add Workspace">+</button>
+        </div>
+        <div id="workspaceList" class="nav-list">
+          <!-- Workspaces populated by JS -->
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-header">
+          <span class="section-title">PAGES</span>
+          <button class="section-add" id="addPage" title="Add Page">+</button>
+        </div>
+        <div id="pageList" class="nav-list">
+          <!-- Pages populated by JS -->
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="footer-btn" id="settingsBtn" title="Settings">&#x2699;</button>
+        <button class="footer-btn" id="exportBtn" title="Export Data">&#x21E9;</button>
+        <button class="footer-btn" id="importBtn" title="Import Data">&#x21E7;</button>
+        <input type="file" id="importInput" accept=".json" style="display: none;">
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main id="main-content">
+      <!-- Page Header -->
+      <header id="page-header">
+        <div class="breadcrumb" id="breadcrumb">
+          <span class="breadcrumb-item">HACKNOTE</span>
+        </div>
+        <div class="page-actions">
+          <button class="action-btn" id="pageTypeBtn" title="Change Page Type">
+            <span class="icon">&#x25A2;</span>
+          </button>
+          <button class="action-btn" id="deletePageBtn" title="Delete Page">
+            <span class="icon">&#x2715;</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Page Content -->
+      <div id="page-content">
+        <!-- Welcome screen when no page selected -->
+        <div id="welcome-screen" class="welcome-screen">
+          <div class="welcome-logo">&#x2B21;</div>
+          <h1 class="welcome-title">HACKNOTE</h1>
+          <p class="welcome-subtitle">// PROJECT MANAGEMENT SYSTEM</p>
+          <div class="welcome-actions">
+            <button class="welcome-btn" id="welcomeNewPage">
+              <span class="icon">+</span>
+              <span>CREATE NEW PAGE</span>
+            </button>
+          </div>
+          <div class="welcome-stats" id="welcomeStats">
+            <div class="stat-item">
+              <span class="stat-value" id="totalPages">0</span>
+              <span class="stat-label">PAGES</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="totalTasks">0</span>
+              <span class="stat-label">TASKS</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="completedTasks">0</span>
+              <span class="stat-label">COMPLETED</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Page Editor (hidden initially) -->
+        <div id="page-editor" class="page-editor hidden">
+          <!-- Page Title -->
+          <div class="page-title-wrapper">
+            <span class="page-icon" id="pageIcon">&#x25A2;</span>
+            <input type="text" id="pageTitle" class="page-title" placeholder="Untitled">
+          </div>
+
+          <!-- Page Type Selector -->
+          <div class="page-type-bar">
+            <button class="type-btn active" data-type="notes" title="Notes">
+              <span class="icon">&#x270E;</span>
+              <span class="label">NOTES</span>
+            </button>
+            <button class="type-btn" data-type="todo" title="Todo List">
+              <span class="icon">&#x2611;</span>
+              <span class="label">TODO</span>
+            </button>
+            <button class="type-btn" data-type="board" title="Kanban Board">
+              <span class="icon">&#x25A6;</span>
+              <span class="label">BOARD</span>
+            </button>
+          </div>
+
+          <!-- Notes View -->
+          <div id="notesView" class="content-view">
+            <div class="notes-toolbar">
+              <div class="toolbar-group">
+                <button class="toolbar-btn" data-command="bold" title="Bold (Ctrl+B)"><strong>B</strong></button>
+                <button class="toolbar-btn" data-command="italic" title="Italic (Ctrl+I)"><em>I</em></button>
+                <button class="toolbar-btn" data-command="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+                <button class="toolbar-btn" data-command="strikeThrough" title="Strikethrough"><s>S</s></button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <button class="toolbar-btn" data-command="formatBlock" data-value="h1" title="Heading 1">H1</button>
+                <button class="toolbar-btn" data-command="formatBlock" data-value="h2" title="Heading 2">H2</button>
+                <button class="toolbar-btn" data-command="formatBlock" data-value="h3" title="Heading 3">H3</button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <button class="toolbar-btn" data-command="insertUnorderedList" title="Bullet List">&#x2022;</button>
+                <button class="toolbar-btn" data-command="insertOrderedList" title="Numbered List">1.</button>
+                <button class="toolbar-btn" data-command="formatBlock" data-value="blockquote" title="Quote">&#x201C;</button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <button class="toolbar-btn" data-command="code" title="Inline Code">&lt;/&gt;</button>
+                <button class="toolbar-btn" data-command="codeBlock" title="Code Block">&#x2630;</button>
+                <button class="toolbar-btn" data-command="createLink" title="Insert Link">&#x1F517;</button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <button class="toolbar-btn" data-command="highlight" title="Highlight">&#x1F4A1;</button>
+                <button class="toolbar-btn" data-command="insertHorizontalRule" title="Horizontal Line">&#x2015;</button>
+              </div>
+              <div class="toolbar-divider"></div>
+              <div class="toolbar-group">
+                <button class="toolbar-btn" id="insertImageBtn" title="Insert Image">&#x1F5BC;</button>
+                <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+              </div>
+              <div class="toolbar-spacer"></div>
+              <div class="toolbar-group">
+                <button class="toolbar-btn toggle-btn" id="markdownToggle" title="Toggle Markdown Mode">MD</button>
+              </div>
+            </div>
+            <div id="notesContent" class="notes-editor" contenteditable="true" placeholder="Start typing your notes..."></div>
+            <textarea id="markdownContent" class="markdown-editor hidden" placeholder="# Write in Markdown..."></textarea>
+          </div>
+
+          <!-- Todo View -->
+          <div id="todoView" class="content-view hidden">
+            <div class="todo-header">
+              <div class="todo-input-wrapper">
+                <input type="text" id="todoInput" class="todo-input" placeholder="Add a new task...">
+                <button class="todo-add-btn" id="todoAddBtn">+</button>
+              </div>
+              <div class="todo-filters">
+                <button class="filter-btn active" data-filter="all">ALL</button>
+                <button class="filter-btn" data-filter="active">ACTIVE</button>
+                <button class="filter-btn" data-filter="completed">DONE</button>
+              </div>
+            </div>
+            <div id="todoList" class="todo-list">
+              <!-- Todos populated by JS -->
+            </div>
+            <div class="todo-footer">
+              <span id="todoCount">0 tasks</span>
+              <button class="clear-btn" id="clearCompleted">CLEAR COMPLETED</button>
+            </div>
+          </div>
+
+          <!-- Board View (Kanban) -->
+          <div id="boardView" class="content-view hidden">
+            <div class="board-container">
+              <div class="board-column" data-status="backlog">
+                <div class="column-header">
+                  <span class="column-title">BACKLOG</span>
+                  <span class="column-count">0</span>
+                </div>
+                <div class="column-cards" data-status="backlog"></div>
+                <button class="add-card-btn" data-status="backlog">+ ADD CARD</button>
+              </div>
+              <div class="board-column" data-status="in-progress">
+                <div class="column-header">
+                  <span class="column-title">IN PROGRESS</span>
+                  <span class="column-count">0</span>
+                </div>
+                <div class="column-cards" data-status="in-progress"></div>
+                <button class="add-card-btn" data-status="in-progress">+ ADD CARD</button>
+              </div>
+              <div class="board-column" data-status="review">
+                <div class="column-header">
+                  <span class="column-title">REVIEW</span>
+                  <span class="column-count">0</span>
+                </div>
+                <div class="column-cards" data-status="review"></div>
+                <button class="add-card-btn" data-status="review">+ ADD CARD</button>
+              </div>
+              <div class="board-column" data-status="done">
+                <div class="column-header">
+                  <span class="column-title">DONE</span>
+                  <span class="column-count">0</span>
+                </div>
+                <div class="column-cards" data-status="done"></div>
+                <button class="add-card-btn" data-status="done">+ ADD CARD</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="modal-overlay" class="modal-overlay">
+      <!-- Card Edit Modal -->
+      <div id="cardModal" class="modal card-modal hidden">
+        <div class="modal-header">
+          <span class="modal-title">EDIT CARD</span>
+          <button class="modal-close" data-close="cardModal">&times;</button>
+        </div>
+        <div class="modal-content">
+          <div class="form-group">
+            <label>TITLE</label>
+            <input type="text" id="cardTitle" placeholder="Card title...">
+          </div>
+          <div class="form-group">
+            <label>DESCRIPTION</label>
+            <textarea id="cardDescription" placeholder="Add a description..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>PRIORITY</label>
+            <div class="priority-select">
+              <button class="priority-btn" data-priority="low">LOW</button>
+              <button class="priority-btn" data-priority="medium">MEDIUM</button>
+              <button class="priority-btn" data-priority="high">HIGH</button>
+              <button class="priority-btn" data-priority="critical">CRITICAL</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" data-close="cardModal">CANCEL</button>
+          <button class="modal-btn danger" id="deleteCardBtn">DELETE</button>
+          <button class="modal-btn confirm" id="saveCardBtn">SAVE</button>
+        </div>
+      </div>
+
+      <!-- Settings Modal -->
+      <div id="settingsModal" class="modal settings-modal hidden">
+        <div class="modal-header">
+          <span class="modal-title">SETTINGS</span>
+          <button class="modal-close" data-close="settingsModal">&times;</button>
+        </div>
+        <div class="modal-content">
+          <div class="form-group">
+            <label>THEME ACCENT</label>
+            <div class="color-options">
+              <button class="color-btn active" data-color="#00ff9d" style="background:#00ff9d"></button>
+              <button class="color-btn" data-color="#00ffff" style="background:#00ffff"></button>
+              <button class="color-btn" data-color="#ff00ff" style="background:#ff00ff"></button>
+              <button class="color-btn" data-color="#ff6b00" style="background:#ff6b00"></button>
+              <button class="color-btn" data-color="#ffff00" style="background:#ffff00"></button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="enableGlow" checked>
+              <span>ENABLE GLOW EFFECTS</span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn confirm" data-close="settingsModal">CLOSE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="contextMenu" class="context-menu hidden">
+      <button class="context-item" data-action="rename">&#x270E; Rename</button>
+      <button class="context-item" data-action="duplicate">&#x2750; Duplicate</button>
+      <button class="context-item" data-action="delete">&#x2715; Delete</button>
+    </div>
+
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
