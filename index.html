@@ -115,6 +115,10 @@
               <span class="icon">&#x25A6;</span>
               <span class="label">BOARD</span>
             </button>
+            <button class="type-btn" data-type="canvas" title="Canvas / Drawing">
+              <span class="icon">&#x2B21;</span>
+              <span class="label">CANVAS</span>
+            </button>
           </div>
 
           <!-- Notes View -->
@@ -221,6 +225,95 @@
                 <button class="add-card-btn" data-status="done">+ ADD CARD</button>
               </div>
             </div>
+          </div>
+
+          <!-- Canvas View (Drawing) -->
+          <div id="canvasView" class="content-view hidden">
+            <div class="canvas-toolbar">
+              <div class="canvas-toolbar-section tools">
+                <button class="canvas-tool-btn active" data-tool="select" title="Select [S]">
+                  <span class="icon">&#x229E;</span>
+                  <span class="label">SELECT</span>
+                </button>
+                <button class="canvas-tool-btn" data-tool="pan" title="Pan [H]">
+                  <span class="icon">&#x2725;</span>
+                  <span class="label">PAN</span>
+                </button>
+                <button class="canvas-tool-btn" data-tool="draw" title="Draw [D]">
+                  <span class="icon">&#x270E;</span>
+                  <span class="label">DRAW</span>
+                </button>
+                <button class="canvas-tool-btn" data-tool="line" title="Line [L]">
+                  <span class="icon">&#x2571;</span>
+                  <span class="label">LINE</span>
+                </button>
+                <button class="canvas-tool-btn" data-tool="rect" title="Rectangle [R]">
+                  <span class="icon">&#x25A2;</span>
+                  <span class="label">RECT</span>
+                </button>
+                <button class="canvas-tool-btn" data-tool="ellipse" title="Ellipse [E]">
+                  <span class="icon">&#x25EF;</span>
+                  <span class="label">ELLIPSE</span>
+                </button>
+                <button class="canvas-tool-btn" data-tool="text" title="Text [T]">
+                  <span class="icon">A</span>
+                  <span class="label">TEXT</span>
+                </button>
+                <button class="canvas-tool-btn" data-tool="image" title="Image [I]">
+                  <span class="icon">&#x2BC0;</span>
+                  <span class="label">IMAGE</span>
+                </button>
+                <button class="canvas-tool-btn" data-tool="connect" title="Connect [C]">
+                  <span class="icon">&#x2192;</span>
+                  <span class="label">CONNECT</span>
+                </button>
+              </div>
+
+              <div class="canvas-toolbar-section actions">
+                <button class="canvas-action-btn" id="canvasUndo" title="Undo [Ctrl+Z]">&#x21B6;</button>
+                <button class="canvas-action-btn" id="canvasRedo" title="Redo [Ctrl+Y]">&#x21B7;</button>
+                <button class="canvas-action-btn" id="canvasClear" title="Clear All">&#x2327;</button>
+              </div>
+
+              <div class="canvas-toolbar-section props">
+                <div class="canvas-prop">
+                  <label>STROKE</label>
+                  <input type="color" id="canvasStrokeColor" value="#00ff9d">
+                  <input type="number" id="canvasStrokeWidth" value="2" min="1" max="50" title="Stroke Width">
+                </div>
+                <div class="canvas-prop">
+                  <label>FILL</label>
+                  <input type="color" id="canvasFillColor" value="#0a0a0f">
+                  <label class="canvas-checkbox">
+                    <input type="checkbox" id="canvasFillEnabled">
+                    <span>ON</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="canvas-toolbar-section zoom">
+                <button class="canvas-zoom-btn" id="canvasZoomOut">&#x2212;</button>
+                <span id="canvasZoomLevel">100%</span>
+                <button class="canvas-zoom-btn" id="canvasZoomIn">+</button>
+                <button class="canvas-zoom-btn" id="canvasZoomReset" title="Reset Zoom">&#x2299;</button>
+              </div>
+            </div>
+
+            <div class="canvas-container" id="canvasContainer">
+              <canvas id="drawingCanvas"></canvas>
+              <textarea id="canvasTextInput" class="canvas-text-input" placeholder="TYPE HERE..."></textarea>
+              <div class="canvas-coords">
+                <span id="canvasMouseX">X: 0</span>
+                <span id="canvasMouseY">Y: 0</span>
+              </div>
+              <div class="canvas-status">
+                <span id="canvasStatusTool">TOOL: SELECT</span>
+                <span id="canvasStatusObjects">OBJECTS: 0</span>
+                <span id="canvasStatusSelected">SELECTED: 0</span>
+              </div>
+            </div>
+
+            <input type="file" id="canvasImageInput" accept="image/*" style="display: none;">
           </div>
         </div>
       </div>

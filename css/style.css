@@ -1806,3 +1806,299 @@ body {
 .modal-btn.danger:hover {
   animation: pulse 0.3s ease-out;
 }
+
+/* ============================================
+   CANVAS VIEW (Drawing)
+   ============================================ */
+
+#canvasView {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
+  min-height: 500px;
+}
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px 8px 0 0;
+  flex-wrap: wrap;
+}
+
+.canvas-toolbar-section {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-toolbar-section.tools {
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.canvas-toolbar-section.props {
+  gap: 12px;
+  padding: 0 12px;
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+}
+
+.canvas-toolbar-section.zoom {
+  gap: 6px;
+}
+
+/* Canvas Tool Buttons */
+.canvas-tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.canvas-tool-btn .icon {
+  font-size: 16px;
+}
+
+.canvas-tool-btn .label {
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+
+.canvas-tool-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: rgba(0, 255, 255, 0.05);
+}
+
+.canvas-tool-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0, 255, 157, 0.1);
+  box-shadow: 0 0 10px var(--accent-dim);
+}
+
+/* Canvas Action Buttons */
+.canvas-action-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s ease;
+}
+
+.canvas-action-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: rgba(0, 255, 255, 0.1);
+}
+
+.canvas-action-btn:active {
+  transform: scale(0.95);
+}
+
+/* Canvas Property Inputs */
+.canvas-prop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-prop label {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+}
+
+.canvas-prop input[type="color"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.canvas-prop input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.canvas-prop input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+.canvas-prop input[type="number"] {
+  width: 50px;
+  padding: 4px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.canvas-prop input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.canvas-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+
+.canvas-checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+/* Canvas Zoom Controls */
+.canvas-zoom-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.canvas-zoom-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+#canvasZoomLevel {
+  min-width: 45px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+/* Canvas Container */
+.canvas-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  /* Grid pattern */
+  background-image:
+    linear-gradient(rgba(0, 255, 157, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 157, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+#drawingCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: crosshair;
+}
+
+/* Canvas Text Input */
+.canvas-text-input {
+  display: none;
+  position: absolute;
+  background: rgba(10, 10, 15, 0.9);
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 24px;
+  padding: 8px 12px;
+  resize: both;
+  outline: none;
+  min-width: 150px;
+  min-height: 40px;
+  z-index: 100;
+  box-shadow: 0 0 20px var(--accent-dim);
+}
+
+.canvas-text-input::placeholder {
+  color: var(--accent-dim);
+}
+
+.canvas-text-input.editing-existing {
+  background: rgba(10, 10, 15, 0.5);
+  border: 2px solid var(--cyan);
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+  padding: 4px;
+  min-width: 50px;
+  min-height: 20px;
+  caret-color: var(--accent);
+}
+
+/* Canvas Coordinates Display */
+.canvas-coords {
+  position: absolute;
+  bottom: 40px;
+  left: 10px;
+  display: flex;
+  gap: 20px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  background: rgba(10, 10, 15, 0.8);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.canvas-coords span {
+  font-family: 'Share Tech Mono', monospace;
+}
+
+/* Canvas Status Bar */
+.canvas-status {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 30px;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.canvas-status span {
+  letter-spacing: 1px;
+}
+
+#canvasStatusTool {
+  color: var(--accent);
+}

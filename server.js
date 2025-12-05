@@ -1,11 +1,37 @@
 const express = require('express');
 const path = require('path');
 const net = require('net');
+const db = require('./db');
 
 const app = express();
 
+// Parse JSON bodies
+app.use(express.json({ limit: '50mb' }));
+
 // Serve static files from current directory
 app.use(express.static(__dirname));
+
+// API: Get all data
+app.get('/api/data', (req, res) => {
+  try {
+    const data = db.load();
+    res.json(data || { workspaces: [], pages: [], settings: {} });
+  } catch (err) {
+    console.error('[API] Failed to load data:', err);
+    res.status(500).json({ error: 'Failed to load data' });
+  }
+});
+
+// API: Save all data
+app.post('/api/data', (req, res) => {
+  try {
+    db.save(req.body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] Failed to save data:', err);
+    res.status(500).json({ error: 'Failed to save data' });
+  }
+});
 
 // Serve index.html for root route
 app.get('/', (req, res) => {

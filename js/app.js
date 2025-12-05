@@ -25,8 +25,8 @@ class HackNote {
     this.init();
   }
 
-  init() {
-    this.loadData();
+  async init() {
+    await this.loadData();
     this.bindEvents();
     this.renderSidebar();
     this.updateStats();
@@ -39,11 +39,11 @@ class HackNote {
   // DATA PERSISTENCE
   // ============================================
 
-  loadData() {
+  async loadData() {
     try {
-      const saved = localStorage.getItem('hacknote_data');
-      if (saved) {
-        const data = JSON.parse(saved);
+      const response = await fetch('/api/data');
+      if (response.ok) {
+        const data = await response.json();
         this.workspaces = data.workspaces || [];
         this.pages = data.pages || [];
         this.settings = { ...this.settings, ...data.settings };
@@ -67,28 +67,26 @@ class HackNote {
   }
 
   saveData() {
-    try {
-      const data = {
-        workspaces: this.workspaces,
-        pages: this.pages,
-        settings: this.settings,
-        savedAt: Date.now()
-      };
-      const jsonData = JSON.stringify(data);
+    const data = {
+      workspaces: this.workspaces,
+      pages: this.pages,
+      settings: this.settings,
+      savedAt: Date.now()
+    };
 
-      // Check if data is too large (localStorage limit is typically 5-10MB)
-      const sizeInMB = (jsonData.length * 2) / (1024 * 1024); // Rough estimate (UTF-16)
-      if (sizeInMB > 4) {
-        console.warn(`[HACKNOTE] Data size: ${sizeInMB.toFixed(2)}MB - approaching storage limit`);
-      }
-
-      localStorage.setItem('hacknote_data', jsonData);
-    } catch (err) {
-      console.error('[HACKNOTE] Failed to save data:', err);
-      if (err.name === 'QuotaExceededError') {
-        alert('Storage limit exceeded! Consider removing some images or exporting your data.');
-      }
+    // Debounce saves to avoid excessive API calls
+    if (this._saveTimeout) {
+      clearTimeout(this._saveTimeout);
     }
+    this._saveTimeout = setTimeout(() => {
+      fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).catch(err => {
+        console.error('[HACKNOTE] Failed to save data:', err);
+      });
+    }, 300);
   }
 
   generateId() {
@@ -482,12 +480,14 @@ class HackNote {
     document.getElementById('notesView').classList.toggle('hidden', type !== 'notes');
     document.getElementById('todoView').classList.toggle('hidden', type !== 'todo');
     document.getElementById('boardView').classList.toggle('hidden', type !== 'board');
+    document.getElementById('canvasView').classList.toggle('hidden', type !== 'canvas');
 
     // Update page icon
     const icons = {
       notes: '\u270E',
       todo: '\u2611',
-      board: '\u25A6'
+      board: '\u25A6',
+      canvas: '\u2B21'
     };
     this.currentPage.icon = icons[type] || '\u25A2';
     document.getElementById('pageIcon').textContent = this.currentPage.icon;
@@ -529,6 +529,9 @@ class HackNote {
         break;
       case 'board':
         this.renderBoard();
+        break;
+      case 'canvas':
+        this.initCanvasEditor();
         break;
     }
   }
@@ -1390,6 +1393,24 @@ class HackNote {
   }
 
   // ============================================
+  // CANVAS EDITOR
+  // ============================================
+
+  initCanvasEditor() {
+    if (!this.canvasEditor) {
+      this.canvasEditor = new CanvasEditor(this);
+    }
+    this.canvasEditor.loadFromPage(this.currentPage);
+  }
+
+  saveCanvasData() {
+    if (this.currentPage && this.canvasEditor) {
+      this.currentPage.canvasData = this.canvasEditor.getObjects();
+      this.saveData();
+    }
+  }
+
+  // ============================================
   // UTILITIES
   // ============================================
 
@@ -1397,6 +1418,1416 @@ class HackNote {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+}
+
+// ============================================
+// CANVAS EDITOR CLASS
+// ============================================
+
+class CanvasEditor {
+  constructor(app) {
+    this.app = app;
+    this.canvas = document.getElementById('drawingCanvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.container = document.getElementById('canvasContainer');
+
+    // State
+    this.objects = [];
+    this.selectedObjects = [];
+    this.currentTool = 'select';
+    this.isDrawing = false;
+    this.isPanning = false;
+    this.isDragging = false;
+    this.isResizing = false;
+
+    // Transform state
+    this.scale = 1;
+    this.offsetX = 0;
+    this.offsetY = 0;
+    this.minScale = 0.1;
+    this.maxScale = 5;
+
+    // Drawing state
+    this.currentPath = [];
+    this.startX = 0;
+    this.startY = 0;
+    this.lastX = 0;
+    this.lastY = 0;
+
+    // History for undo/redo
+    this.history = [];
+    this.historyIndex = -1;
+    this.maxHistory = 50;
+
+    // Properties
+    this.strokeColor = '#00ff9d';
+    this.fillColor = '#0a0a0f';
+    this.fillEnabled = false;
+    this.strokeWidth = 2;
+    this.fontSize = 24;
+    this.opacity = 100;
+
+    // Object ID counter
+    this.objectIdCounter = 0;
+
+    // Connector state
+    this.connectingFrom = null;
+    this.connectingPreview = null;
+
+    // Text editing state
+    this.editingTextObject = null;
+
+    // Resize state
+    this.resizeHandle = null;
+    this.resizeObject = null;
+    this.resizeStart = null;
+
+    // Initialize
+    this.init();
+  }
+
+  init() {
+    this.setupCanvas();
+    this.bindEvents();
+    this.bindToolbar();
+    this.bindProperties();
+  }
+
+  setupCanvas() {
+    this.resizeCanvas();
+    window.addEventListener('resize', () => this.resizeCanvas());
+  }
+
+  resizeCanvas() {
+    const rect = this.container.getBoundingClientRect();
+    this.canvas.width = rect.width;
+    this.canvas.height = rect.height - 40; // Account for status bar
+    this.render();
+  }
+
+  loadFromPage(page) {
+    if (page && page.canvasData) {
+      this.objects = page.canvasData.map(obj => {
+        if (obj.type === 'image' && obj.src) {
+          const img = new Image();
+          img.onload = () => this.render();
+          img.src = obj.src;
+          obj.imageElement = img;
+        }
+        return obj;
+      });
+      // Update ID counter
+      this.objectIdCounter = Math.max(...this.objects.map(o => o.id || 0), 0);
+    } else {
+      this.objects = [];
+      this.objectIdCounter = 0;
+    }
+    this.selectedObjects = [];
+    this.history = [];
+    this.historyIndex = -1;
+    this.saveState();
+    this.updateStatus();
+    this.resizeCanvas();
+    this.render();
+  }
+
+  getObjects() {
+    return this.objects.map(obj => {
+      const clone = { ...obj };
+      if (clone.type === 'image') {
+        delete clone.imageElement;
+      }
+      if (clone.type === 'path') {
+        clone.points = [...obj.points];
+      }
+      return clone;
+    });
+  }
+
+  // Coordinate transformations
+  screenToCanvas(x, y) {
+    return {
+      x: (x - this.offsetX) / this.scale,
+      y: (y - this.offsetY) / this.scale
+    };
+  }
+
+  canvasToScreen(x, y) {
+    return {
+      x: x * this.scale + this.offsetX,
+      y: y * this.scale + this.offsetY
+    };
+  }
+
+  // Event bindings
+  bindEvents() {
+    this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
+    this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    this.canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    this.canvas.addEventListener('mouseleave', (e) => this.onMouseUp(e));
+    this.canvas.addEventListener('dblclick', (e) => this.onDoubleClick(e));
+    this.canvas.addEventListener('auxclick', (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
+    this.canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+
+    // Text input
+    const textInput = document.getElementById('canvasTextInput');
+    textInput.addEventListener('blur', () => this.finalizeText());
+    textInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        textInput.style.display = 'none';
+        textInput.value = '';
+        textInput.classList.remove('editing-existing');
+        this.editingTextObject = null;
+        this.render();
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.finalizeText();
+        this.selectTool('select');
+      }
+    });
+
+    // Image input
+    document.getElementById('canvasImageInput').addEventListener('change', (e) => this.handleImageUpload(e));
+
+    // Keyboard shortcuts (only when canvas view is active)
+    document.addEventListener('keydown', (e) => {
+      if (!document.getElementById('canvasView').classList.contains('hidden')) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        if (!e.ctrlKey && !e.metaKey) {
+          switch (e.key.toLowerCase()) {
+            case 's': this.selectTool('select'); break;
+            case 'h': this.selectTool('pan'); break;
+            case 'd': this.selectTool('draw'); break;
+            case 'l': this.selectTool('line'); break;
+            case 'r': this.selectTool('rect'); break;
+            case 'e': this.selectTool('ellipse'); break;
+            case 't': this.selectTool('text'); break;
+            case 'i': this.selectTool('image'); break;
+            case 'c': this.selectTool('connect'); break;
+            case 'delete':
+            case 'backspace':
+              this.deleteSelected();
+              break;
+            case 'escape':
+              this.deselectAll();
+              break;
+          }
+        }
+
+        if (e.ctrlKey || e.metaKey) {
+          switch (e.key.toLowerCase()) {
+            case 'z':
+              e.preventDefault();
+              if (e.shiftKey) this.redo();
+              else this.undo();
+              break;
+            case 'y':
+              e.preventDefault();
+              this.redo();
+              break;
+            case 'a':
+              e.preventDefault();
+              this.selectAll();
+              break;
+          }
+        }
+      }
+    });
+  }
+
+  bindToolbar() {
+    // Tool buttons
+    document.querySelectorAll('.canvas-tool-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.selectTool(btn.dataset.tool);
+      });
+    });
+
+    // Action buttons
+    document.getElementById('canvasUndo').addEventListener('click', () => this.undo());
+    document.getElementById('canvasRedo').addEventListener('click', () => this.redo());
+    document.getElementById('canvasClear').addEventListener('click', () => this.clearAll());
+
+    // Zoom buttons
+    document.getElementById('canvasZoomIn').addEventListener('click', () => this.zoom(1.2));
+    document.getElementById('canvasZoomOut').addEventListener('click', () => this.zoom(0.8));
+    document.getElementById('canvasZoomReset').addEventListener('click', () => this.resetZoom());
+  }
+
+  bindProperties() {
+    document.getElementById('canvasStrokeColor').addEventListener('input', (e) => {
+      this.strokeColor = e.target.value;
+      this.updateSelectedObjects('strokeColor', this.strokeColor);
+    });
+
+    document.getElementById('canvasFillColor').addEventListener('input', (e) => {
+      this.fillColor = e.target.value;
+      this.updateSelectedObjects('fillColor', this.fillColor);
+    });
+
+    document.getElementById('canvasFillEnabled').addEventListener('change', (e) => {
+      this.fillEnabled = e.target.checked;
+      this.updateSelectedObjects('fillEnabled', this.fillEnabled);
+    });
+
+    document.getElementById('canvasStrokeWidth').addEventListener('input', (e) => {
+      this.strokeWidth = parseInt(e.target.value) || 2;
+      this.updateSelectedObjects('strokeWidth', this.strokeWidth);
+    });
+  }
+
+  selectTool(tool) {
+    document.querySelectorAll('.canvas-tool-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tool === tool);
+    });
+    this.currentTool = tool;
+    this.updateStatus();
+
+    if (tool === 'image') {
+      document.getElementById('canvasImageInput').click();
+    }
+  }
+
+  // Mouse handlers
+  onMouseDown(e) {
+    const textInput = document.getElementById('canvasTextInput');
+    if (textInput.style.display === 'block') {
+      this.finalizeText();
+      if (this.currentTool !== 'text') return;
+    }
+
+    const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const { x, y } = this.screenToCanvas(screenX, screenY);
+
+    this.startX = x;
+    this.startY = y;
+    this.lastX = screenX;
+    this.lastY = screenY;
+
+    if (e.button === 1) {
+      e.preventDefault();
+      this.isPanning = true;
+      this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+
+    switch (this.currentTool) {
+      case 'select':
+        this.handleSelectDown(x, y, e);
+        break;
+      case 'pan':
+        this.isPanning = true;
+        this.canvas.style.cursor = 'grabbing';
+        break;
+      case 'draw':
+        this.isDrawing = true;
+        this.currentPath = [{ x, y }];
+        break;
+      case 'line':
+      case 'rect':
+      case 'ellipse':
+        this.isDrawing = true;
+        break;
+      case 'text':
+        this.showTextInput(screenX, screenY, x, y);
+        break;
+      case 'connect':
+        this.handleConnectDown(x, y);
+        break;
+    }
+  }
+
+  onMouseMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const { x, y } = this.screenToCanvas(screenX, screenY);
+
+    document.getElementById('canvasMouseX').textContent = `X: ${Math.round(x)}`;
+    document.getElementById('canvasMouseY').textContent = `Y: ${Math.round(y)}`;
+
+    if (this.isPanning) {
+      const dx = screenX - this.lastX;
+      const dy = screenY - this.lastY;
+      this.offsetX += dx;
+      this.offsetY += dy;
+      this.lastX = screenX;
+      this.lastY = screenY;
+      this.render();
+      return;
+    }
+
+    if (this.isResizing && this.resizeObject) {
+      this.handleResize(x, y);
+      return;
+    }
+
+    if (this.isDragging && this.selectedObjects.length > 0) {
+      const dx = x - this.startX;
+      const dy = y - this.startY;
+
+      this.selectedObjects.forEach(obj => {
+        obj.x = (obj._dragStartX || obj.x) + dx;
+        obj.y = (obj._dragStartY || obj.y) + dy;
+      });
+
+      this.render();
+      return;
+    }
+
+    if (this.isDrawing) {
+      if (this.currentTool === 'draw') {
+        this.currentPath.push({ x, y });
+      }
+      this.render();
+      this.drawPreview(x, y);
+    }
+
+    if (this.connectingFrom) {
+      this.connectingPreview = { x, y };
+      this.render();
+      this.drawConnectorPreview(x, y);
+    }
+  }
+
+  onMouseUp(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const { x, y } = this.screenToCanvas(screenX, screenY);
+
+    if (this.isPanning) {
+      this.isPanning = false;
+      this.canvas.style.cursor = 'crosshair';
+      return;
+    }
+
+    if (this.connectingFrom) {
+      this.handleConnectUp(x, y);
+      return;
+    }
+
+    if (this.isResizing) {
+      this.finalizeResize();
+      return;
+    }
+
+    if (this.isDragging) {
+      this.isDragging = false;
+      this.selectedObjects.forEach(obj => {
+        delete obj._dragStartX;
+        delete obj._dragStartY;
+      });
+      this.saveState();
+      this.render();
+      return;
+    }
+
+    if (this.isDrawing) {
+      this.isDrawing = false;
+
+      switch (this.currentTool) {
+        case 'draw':
+          if (this.currentPath.length > 1) {
+            this.addObject({
+              type: 'path',
+              points: [...this.currentPath],
+              strokeColor: this.strokeColor,
+              strokeWidth: this.strokeWidth,
+              opacity: this.opacity
+            });
+          }
+          this.currentPath = [];
+          break;
+
+        case 'line':
+          if (Math.abs(x - this.startX) > 2 || Math.abs(y - this.startY) > 2) {
+            this.addObject({
+              type: 'line',
+              x: this.startX,
+              y: this.startY,
+              x2: x,
+              y2: y,
+              strokeColor: this.strokeColor,
+              strokeWidth: this.strokeWidth,
+              opacity: this.opacity
+            });
+          }
+          break;
+
+        case 'rect':
+          const rw = x - this.startX;
+          const rh = y - this.startY;
+          if (Math.abs(rw) > 2 && Math.abs(rh) > 2) {
+            this.addObject({
+              type: 'rect',
+              x: rw > 0 ? this.startX : x,
+              y: rh > 0 ? this.startY : y,
+              width: Math.abs(rw),
+              height: Math.abs(rh),
+              strokeColor: this.strokeColor,
+              fillColor: this.fillColor,
+              fillEnabled: this.fillEnabled,
+              strokeWidth: this.strokeWidth,
+              opacity: this.opacity
+            });
+          }
+          break;
+
+        case 'ellipse':
+          const ew = x - this.startX;
+          const eh = y - this.startY;
+          if (Math.abs(ew) > 2 && Math.abs(eh) > 2) {
+            this.addObject({
+              type: 'ellipse',
+              x: this.startX + ew / 2,
+              y: this.startY + eh / 2,
+              radiusX: Math.abs(ew / 2),
+              radiusY: Math.abs(eh / 2),
+              strokeColor: this.strokeColor,
+              fillColor: this.fillColor,
+              fillEnabled: this.fillEnabled,
+              strokeWidth: this.strokeWidth,
+              opacity: this.opacity
+            });
+          }
+          break;
+      }
+
+      this.render();
+    }
+  }
+
+  onWheel(e) {
+    e.preventDefault();
+
+    const rect = this.canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = Math.min(Math.max(this.scale * zoomFactor, this.minScale), this.maxScale);
+
+    const scaleDiff = newScale / this.scale;
+    this.offsetX = mouseX - (mouseX - this.offsetX) * scaleDiff;
+    this.offsetY = mouseY - (mouseY - this.offsetY) * scaleDiff;
+    this.scale = newScale;
+
+    this.updateZoomDisplay();
+    this.render();
+  }
+
+  onDoubleClick(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const { x, y } = this.screenToCanvas(screenX, screenY);
+
+    const clickedObject = this.findObjectAt(x, y);
+    if (clickedObject && clickedObject.type === 'text') {
+      this.editTextObject(clickedObject, screenX, screenY);
+    }
+  }
+
+  // Selection
+  handleSelectDown(x, y, e) {
+    const handleHit = this.findResizeHandle(x, y);
+    if (handleHit) {
+      this.isResizing = true;
+      this.resizeHandle = handleHit.handle;
+      this.resizeObject = handleHit.object;
+      const bounds = this.getObjectBounds(handleHit.object);
+      this.resizeStart = {
+        x: handleHit.object.x,
+        y: handleHit.object.y,
+        width: bounds.width,
+        height: bounds.height,
+        mouseX: x,
+        mouseY: y,
+        fontSize: handleHit.object.fontSize || null
+      };
+      return;
+    }
+
+    const clickedObject = this.findObjectAt(x, y);
+
+    if (clickedObject) {
+      if (!e.shiftKey && !this.selectedObjects.includes(clickedObject)) {
+        this.deselectAll();
+      }
+
+      if (!this.selectedObjects.includes(clickedObject)) {
+        this.selectedObjects.push(clickedObject);
+      }
+
+      this.isDragging = true;
+      this.selectedObjects.forEach(obj => {
+        obj._dragStartX = obj.x;
+        obj._dragStartY = obj.y;
+      });
+    } else {
+      if (!e.shiftKey) {
+        this.deselectAll();
+      }
+    }
+
+    this.updateStatus();
+    this.render();
+  }
+
+  findResizeHandle(x, y) {
+    const handleSize = 12 / this.scale;
+
+    for (const obj of this.selectedObjects) {
+      if (!this.isResizable(obj)) continue;
+
+      const bounds = this.getObjectBounds(obj);
+      const padding = 5 / this.scale;
+
+      const handles = {
+        'nw': { x: bounds.x - padding, y: bounds.y - padding },
+        'ne': { x: bounds.x + bounds.width + padding, y: bounds.y - padding },
+        'sw': { x: bounds.x - padding, y: bounds.y + bounds.height + padding },
+        'se': { x: bounds.x + bounds.width + padding, y: bounds.y + bounds.height + padding }
+      };
+
+      for (const [handle, pos] of Object.entries(handles)) {
+        if (Math.abs(x - pos.x) < handleSize / 2 && Math.abs(y - pos.y) < handleSize / 2) {
+          return { handle, object: obj };
+        }
+      }
+    }
+    return null;
+  }
+
+  isResizable(obj) {
+    return ['rect', 'image', 'ellipse', 'text'].includes(obj.type);
+  }
+
+  handleResize(x, y) {
+    const obj = this.resizeObject;
+    const start = this.resizeStart;
+    const dx = x - start.mouseX;
+    const dy = y - start.mouseY;
+    const minSize = 20;
+
+    if (obj.type === 'ellipse') {
+      const startRadiusX = start.width / 2;
+      const startRadiusY = start.height / 2;
+
+      switch (this.resizeHandle) {
+        case 'se':
+          obj.radiusX = Math.max(10, startRadiusX + dx / 2);
+          obj.radiusY = Math.max(10, startRadiusY + dy / 2);
+          break;
+        case 'sw':
+          obj.radiusX = Math.max(10, startRadiusX - dx / 2);
+          obj.radiusY = Math.max(10, startRadiusY + dy / 2);
+          break;
+        case 'ne':
+          obj.radiusX = Math.max(10, startRadiusX + dx / 2);
+          obj.radiusY = Math.max(10, startRadiusY - dy / 2);
+          break;
+        case 'nw':
+          obj.radiusX = Math.max(10, startRadiusX - dx / 2);
+          obj.radiusY = Math.max(10, startRadiusY - dy / 2);
+          break;
+      }
+    } else if (obj.type === 'text') {
+      let scale;
+      switch (this.resizeHandle) {
+        case 'se': scale = Math.max(1 + dx / start.width, 1 + dy / start.height); break;
+        case 'sw': scale = Math.max(1 - dx / start.width, 1 + dy / start.height); break;
+        case 'ne': scale = Math.max(1 + dx / start.width, 1 - dy / start.height); break;
+        case 'nw': scale = Math.max(1 - dx / start.width, 1 - dy / start.height); break;
+      }
+      obj.fontSize = Math.max(8, Math.min(200, Math.round(start.fontSize * scale)));
+    } else {
+      switch (this.resizeHandle) {
+        case 'se':
+          obj.width = Math.max(minSize, start.width + dx);
+          obj.height = Math.max(minSize, start.height + dy);
+          break;
+        case 'sw':
+          const newWidthSW = Math.max(minSize, start.width - dx);
+          obj.x = start.x + (start.width - newWidthSW);
+          obj.width = newWidthSW;
+          obj.height = Math.max(minSize, start.height + dy);
+          break;
+        case 'ne':
+          obj.width = Math.max(minSize, start.width + dx);
+          const newHeightNE = Math.max(minSize, start.height - dy);
+          obj.y = start.y + (start.height - newHeightNE);
+          obj.height = newHeightNE;
+          break;
+        case 'nw':
+          const newWidthNW = Math.max(minSize, start.width - dx);
+          const newHeightNW = Math.max(minSize, start.height - dy);
+          obj.x = start.x + (start.width - newWidthNW);
+          obj.y = start.y + (start.height - newHeightNW);
+          obj.width = newWidthNW;
+          obj.height = newHeightNW;
+          break;
+      }
+    }
+
+    this.render();
+  }
+
+  finalizeResize() {
+    this.isResizing = false;
+    this.resizeHandle = null;
+    this.resizeObject = null;
+    this.resizeStart = null;
+    this.saveState();
+    this.render();
+  }
+
+  findObjectAt(x, y) {
+    for (let i = this.objects.length - 1; i >= 0; i--) {
+      const obj = this.objects[i];
+      if (this.isPointInObject(x, y, obj)) {
+        return obj;
+      }
+    }
+    return null;
+  }
+
+  isPointInObject(x, y, obj) {
+    const margin = 10 / this.scale;
+
+    switch (obj.type) {
+      case 'rect':
+        return x >= obj.x - margin && x <= obj.x + obj.width + margin &&
+               y >= obj.y - margin && y <= obj.y + obj.height + margin;
+
+      case 'ellipse':
+        const dx = (x - obj.x) / obj.radiusX;
+        const dy = (y - obj.y) / obj.radiusY;
+        return (dx * dx + dy * dy) <= 1.5;
+
+      case 'line':
+        return this.pointToLineDistance(x, y, obj.x, obj.y, obj.x2, obj.y2) < margin;
+
+      case 'path':
+        for (let i = 1; i < obj.points.length; i++) {
+          const p1 = obj.points[i - 1];
+          const p2 = obj.points[i];
+          if (this.pointToLineDistance(x, y, p1.x, p1.y, p2.x, p2.y) < margin) {
+            return true;
+          }
+        }
+        return false;
+
+      case 'text':
+        const lines = obj.text.split('\n');
+        const maxLineLength = Math.max(...lines.map(l => l.length));
+        const textWidth = maxLineLength * obj.fontSize * 0.6;
+        const textHeight = lines.length * obj.fontSize * 1.2;
+        return x >= obj.x - margin && x <= obj.x + textWidth + margin &&
+               y >= obj.y - margin && y <= obj.y + textHeight + margin;
+
+      case 'image':
+        return x >= obj.x - margin && x <= obj.x + obj.width + margin &&
+               y >= obj.y - margin && y <= obj.y + obj.height + margin;
+
+      case 'connector': {
+        const connFrom = this.objects.find(o => o.id === obj.fromId);
+        const connTo = this.objects.find(o => o.id === obj.toId);
+        if (!connFrom || !connTo) return false;
+
+        const fromBounds = this.getObjectBounds(connFrom);
+        const toBounds = this.getObjectBounds(connTo);
+        const anchors = this.calculateConnectorAnchors(fromBounds, toBounds);
+
+        return this.pointToLineDistance(x, y, anchors.from.x, anchors.from.y, anchors.to.x, anchors.to.y) < margin;
+      }
+
+      default:
+        return false;
+    }
+  }
+
+  pointToLineDistance(px, py, x1, y1, x2, y2) {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = lenSq !== 0 ? dot / lenSq : -1;
+
+    let xx, yy;
+    if (param < 0) { xx = x1; yy = y1; }
+    else if (param > 1) { xx = x2; yy = y2; }
+    else { xx = x1 + param * C; yy = y1 + param * D; }
+
+    return Math.sqrt((px - xx) ** 2 + (py - yy) ** 2);
+  }
+
+  selectAll() {
+    this.selectedObjects = [...this.objects];
+    this.updateStatus();
+    this.render();
+  }
+
+  deselectAll() {
+    this.selectedObjects = [];
+    this.updateStatus();
+    this.render();
+  }
+
+  deleteSelected() {
+    if (this.selectedObjects.length === 0) return;
+
+    const deletedIds = this.selectedObjects.map(obj => obj.id);
+    this.objects = this.objects.filter(obj => !this.selectedObjects.includes(obj));
+    this.objects = this.objects.filter(obj => {
+      if (obj.type === 'connector') {
+        return !deletedIds.includes(obj.fromId) && !deletedIds.includes(obj.toId);
+      }
+      return true;
+    });
+
+    this.selectedObjects = [];
+    this.saveState();
+    this.updateStatus();
+    this.render();
+  }
+
+  updateSelectedObjects(property, value) {
+    this.selectedObjects.forEach(obj => {
+      obj[property] = value;
+    });
+    if (this.selectedObjects.length > 0) {
+      this.saveState();
+    }
+    this.render();
+  }
+
+  // Object management
+  addObject(obj) {
+    obj.id = ++this.objectIdCounter;
+    this.objects.push(obj);
+    this.saveState();
+    this.updateStatus();
+  }
+
+  // Text tool
+  showTextInput(screenX, screenY, canvasX, canvasY) {
+    const textInput = document.getElementById('canvasTextInput');
+
+    textInput.style.display = 'block';
+    textInput.style.left = (screenX) + 'px';
+    textInput.style.top = (screenY) + 'px';
+    textInput.style.fontSize = (this.fontSize * this.scale) + 'px';
+    textInput.style.color = this.strokeColor;
+    textInput.value = '';
+    textInput.dataset.canvasX = canvasX;
+    textInput.dataset.canvasY = canvasY;
+    this.editingTextObject = null;
+
+    setTimeout(() => textInput.focus(), 10);
+  }
+
+  editTextObject(obj, screenX, screenY) {
+    const textInput = document.getElementById('canvasTextInput');
+    const screenPos = this.canvasToScreen(obj.x, obj.y);
+
+    textInput.style.display = 'block';
+    textInput.style.left = screenPos.x + 'px';
+    textInput.style.top = screenPos.y + 'px';
+    textInput.style.fontSize = (obj.fontSize * this.scale) + 'px';
+    textInput.style.color = obj.strokeColor;
+    textInput.value = obj.text;
+    textInput.dataset.canvasX = obj.x;
+    textInput.dataset.canvasY = obj.y;
+    textInput.classList.add('editing-existing');
+
+    this.editingTextObject = obj;
+    this.render();
+
+    setTimeout(() => {
+      textInput.focus();
+      textInput.selectionStart = textInput.selectionEnd = textInput.value.length;
+    }, 10);
+  }
+
+  finalizeText() {
+    const textInput = document.getElementById('canvasTextInput');
+    const text = textInput.value.trim();
+
+    if (this.editingTextObject) {
+      if (text) {
+        this.editingTextObject.text = text;
+        this.saveState();
+      } else {
+        this.objects = this.objects.filter(obj => obj !== this.editingTextObject);
+        this.selectedObjects = this.selectedObjects.filter(obj => obj !== this.editingTextObject);
+        this.saveState();
+      }
+      this.editingTextObject = null;
+      this.render();
+    } else if (text) {
+      this.addObject({
+        type: 'text',
+        x: parseFloat(textInput.dataset.canvasX),
+        y: parseFloat(textInput.dataset.canvasY),
+        text: text,
+        fontSize: this.fontSize,
+        strokeColor: this.strokeColor,
+        opacity: this.opacity
+      });
+      this.render();
+    }
+
+    textInput.style.display = 'none';
+    textInput.value = '';
+    textInput.classList.remove('editing-existing');
+  }
+
+  // Connector tool
+  handleConnectDown(x, y) {
+    const sourceObj = this.findObjectAt(x, y);
+    if (sourceObj && sourceObj.type !== 'connector') {
+      this.connectingFrom = sourceObj;
+      this.connectingPreview = { x, y };
+    }
+  }
+
+  handleConnectUp(x, y) {
+    if (!this.connectingFrom) return;
+
+    const targetObj = this.findObjectAt(x, y);
+
+    if (targetObj && targetObj !== this.connectingFrom && targetObj.type !== 'connector') {
+      this.addObject({
+        type: 'connector',
+        fromId: this.connectingFrom.id,
+        toId: targetObj.id,
+        strokeColor: this.strokeColor,
+        strokeWidth: this.strokeWidth,
+        opacity: this.opacity
+      });
+    }
+
+    this.connectingFrom = null;
+    this.connectingPreview = null;
+    this.render();
+  }
+
+  drawConnectorPreview(toX, toY) {
+    if (!this.connectingFrom) return;
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(this.offsetX, this.offsetY);
+    ctx.scale(this.scale, this.scale);
+
+    const fromBounds = this.getObjectBounds(this.connectingFrom);
+    const anchors = this.calculateConnectorAnchors(fromBounds, { x: toX, y: toY, width: 0, height: 0 });
+
+    ctx.strokeStyle = this.strokeColor;
+    ctx.lineWidth = this.strokeWidth;
+    ctx.globalAlpha = 0.6;
+    ctx.setLineDash([5, 5]);
+
+    this.drawArrowLine(ctx, anchors.from.x, anchors.from.y, toX, toY);
+
+    ctx.restore();
+  }
+
+  calculateConnectorAnchors(fromBounds, toBounds) {
+    const fromCenter = {
+      x: fromBounds.x + fromBounds.width / 2,
+      y: fromBounds.y + fromBounds.height / 2
+    };
+    const toCenter = {
+      x: toBounds.x + toBounds.width / 2,
+      y: toBounds.y + toBounds.height / 2
+    };
+
+    const dx = toCenter.x - fromCenter.x;
+    const dy = toCenter.y - fromCenter.y;
+
+    let fromAnchor, toAnchor;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      if (dx > 0) {
+        fromAnchor = { x: fromBounds.x + fromBounds.width, y: fromCenter.y };
+        toAnchor = { x: toBounds.x, y: toCenter.y };
+      } else {
+        fromAnchor = { x: fromBounds.x, y: fromCenter.y };
+        toAnchor = { x: toBounds.x + toBounds.width, y: toCenter.y };
+      }
+    } else {
+      if (dy > 0) {
+        fromAnchor = { x: fromCenter.x, y: fromBounds.y + fromBounds.height };
+        toAnchor = { x: toCenter.x, y: toBounds.y };
+      } else {
+        fromAnchor = { x: fromCenter.x, y: fromBounds.y };
+        toAnchor = { x: toCenter.x, y: toBounds.y + toBounds.height };
+      }
+    }
+
+    return { from: fromAnchor, to: toAnchor };
+  }
+
+  drawArrowLine(ctx, x1, y1, x2, y2) {
+    const headLength = 12;
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLength * Math.cos(angle - Math.PI / 6), y2 - headLength * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLength * Math.cos(angle + Math.PI / 6), y2 - headLength * Math.sin(angle + Math.PI / 6));
+    ctx.stroke();
+  }
+
+  // Image handling
+  handleImageUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      console.error('Invalid file type');
+      return;
+    }
+
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert('Image too large. Max size: 10MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      this.loadImage(event.target.result);
+    };
+    reader.readAsDataURL(file);
+
+    e.target.value = '';
+  }
+
+  loadImage(dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+      const centerX = (this.canvas.width / 2 - this.offsetX) / this.scale;
+      const centerY = (this.canvas.height / 2 - this.offsetY) / this.scale;
+
+      let width = img.width;
+      let height = img.height;
+      const maxSize = 400;
+
+      if (width > maxSize || height > maxSize) {
+        const ratio = Math.min(maxSize / width, maxSize / height);
+        width *= ratio;
+        height *= ratio;
+      }
+
+      this.addObject({
+        type: 'image',
+        x: centerX - width / 2,
+        y: centerY - height / 2,
+        width: width,
+        height: height,
+        src: dataUrl,
+        imageElement: img,
+        opacity: this.opacity
+      });
+
+      this.render();
+    };
+    img.src = dataUrl;
+  }
+
+  // Rendering
+  render() {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+    ctx.save();
+    ctx.translate(this.offsetX, this.offsetY);
+    ctx.scale(this.scale, this.scale);
+
+    this.objects.forEach(obj => this.drawObject(obj));
+    this.selectedObjects.forEach(obj => this.drawSelectionIndicator(obj));
+
+    ctx.restore();
+  }
+
+  drawObject(obj) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = (obj.opacity || 100) / 100;
+
+    switch (obj.type) {
+      case 'path': this.drawPath(obj); break;
+      case 'line': this.drawLine(obj); break;
+      case 'rect': this.drawRect(obj); break;
+      case 'ellipse': this.drawEllipse(obj); break;
+      case 'text': this.drawText(obj); break;
+      case 'image': this.drawImage(obj); break;
+      case 'connector': this.drawConnector(obj); break;
+    }
+
+    ctx.restore();
+  }
+
+  drawPath(obj) {
+    const ctx = this.ctx;
+    if (obj.points.length < 2) return;
+
+    ctx.beginPath();
+    ctx.moveTo(obj.points[0].x, obj.points[0].y);
+
+    for (let i = 1; i < obj.points.length; i++) {
+      ctx.lineTo(obj.points[i].x, obj.points[i].y);
+    }
+
+    ctx.strokeStyle = obj.strokeColor;
+    ctx.lineWidth = obj.strokeWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+
+  drawLine(obj) {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.moveTo(obj.x, obj.y);
+    ctx.lineTo(obj.x2, obj.y2);
+    ctx.strokeStyle = obj.strokeColor;
+    ctx.lineWidth = obj.strokeWidth;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  }
+
+  drawRect(obj) {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.rect(obj.x, obj.y, obj.width, obj.height);
+
+    if (obj.fillEnabled) {
+      ctx.fillStyle = obj.fillColor;
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = obj.strokeColor;
+    ctx.lineWidth = obj.strokeWidth;
+    ctx.stroke();
+  }
+
+  drawEllipse(obj) {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.ellipse(obj.x, obj.y, obj.radiusX, obj.radiusY, 0, 0, Math.PI * 2);
+
+    if (obj.fillEnabled) {
+      ctx.fillStyle = obj.fillColor;
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = obj.strokeColor;
+    ctx.lineWidth = obj.strokeWidth;
+    ctx.stroke();
+  }
+
+  drawText(obj) {
+    if (this.editingTextObject === obj) return;
+
+    const ctx = this.ctx;
+    ctx.font = `${obj.fontSize}px 'Share Tech Mono', monospace`;
+    ctx.fillStyle = obj.strokeColor;
+    ctx.textBaseline = 'top';
+
+    ctx.shadowColor = obj.strokeColor;
+    ctx.shadowBlur = 4;
+
+    const lines = obj.text.split('\n');
+    const lineHeight = obj.fontSize * 1.2;
+    lines.forEach((line, index) => {
+      ctx.fillText(line, obj.x, obj.y + index * lineHeight);
+    });
+
+    ctx.shadowBlur = 0;
+  }
+
+  drawImage(obj) {
+    const ctx = this.ctx;
+    if (obj.imageElement) {
+      ctx.drawImage(obj.imageElement, obj.x, obj.y, obj.width, obj.height);
+    }
+  }
+
+  drawConnector(obj) {
+    const fromObj = this.objects.find(o => o.id === obj.fromId);
+    const toObj = this.objects.find(o => o.id === obj.toId);
+
+    if (!fromObj || !toObj) return;
+
+    const ctx = this.ctx;
+    const fromBounds = this.getObjectBounds(fromObj);
+    const toBounds = this.getObjectBounds(toObj);
+    const anchors = this.calculateConnectorAnchors(fromBounds, toBounds);
+
+    ctx.strokeStyle = obj.strokeColor;
+    ctx.lineWidth = obj.strokeWidth;
+    ctx.lineCap = 'round';
+
+    this.drawArrowLine(ctx, anchors.from.x, anchors.from.y, anchors.to.x, anchors.to.y);
+  }
+
+  drawSelectionIndicator(obj) {
+    if (this.editingTextObject === obj) return;
+
+    const ctx = this.ctx;
+    ctx.save();
+
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 2 / this.scale;
+    ctx.setLineDash([5 / this.scale, 5 / this.scale]);
+
+    const bounds = this.getObjectBounds(obj);
+    const padding = 5 / this.scale;
+
+    ctx.strokeRect(bounds.x - padding, bounds.y - padding, bounds.width + padding * 2, bounds.height + padding * 2);
+
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#00ff9d';
+    const handleSize = 8 / this.scale;
+
+    const handles = [
+      { x: bounds.x - padding, y: bounds.y - padding },
+      { x: bounds.x + bounds.width + padding, y: bounds.y - padding },
+      { x: bounds.x - padding, y: bounds.y + bounds.height + padding },
+      { x: bounds.x + bounds.width + padding, y: bounds.y + bounds.height + padding }
+    ];
+
+    handles.forEach(h => {
+      ctx.fillRect(h.x - handleSize / 2, h.y - handleSize / 2, handleSize, handleSize);
+    });
+
+    ctx.restore();
+  }
+
+  getObjectBounds(obj) {
+    switch (obj.type) {
+      case 'rect':
+        return { x: obj.x, y: obj.y, width: obj.width, height: obj.height };
+
+      case 'ellipse':
+        return { x: obj.x - obj.radiusX, y: obj.y - obj.radiusY, width: obj.radiusX * 2, height: obj.radiusY * 2 };
+
+      case 'line':
+        return { x: Math.min(obj.x, obj.x2), y: Math.min(obj.y, obj.y2), width: Math.abs(obj.x2 - obj.x), height: Math.abs(obj.y2 - obj.y) };
+
+      case 'path':
+        if (obj.points.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        obj.points.forEach(p => {
+          minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+        });
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+
+      case 'text':
+        const textLines = obj.text.split('\n');
+        const maxLen = Math.max(...textLines.map(l => l.length));
+        const tWidth = maxLen * obj.fontSize * 0.6;
+        const tHeight = textLines.length * obj.fontSize * 1.2;
+        return { x: obj.x, y: obj.y, width: tWidth, height: tHeight };
+
+      case 'image':
+        return { x: obj.x, y: obj.y, width: obj.width, height: obj.height };
+
+      case 'connector': {
+        const connFromObj = this.objects.find(o => o.id === obj.fromId);
+        const connToObj = this.objects.find(o => o.id === obj.toId);
+        if (!connFromObj || !connToObj) return { x: 0, y: 0, width: 0, height: 0 };
+
+        const connFromBounds = this.getObjectBounds(connFromObj);
+        const connToBounds = this.getObjectBounds(connToObj);
+        const connAnchors = this.calculateConnectorAnchors(connFromBounds, connToBounds);
+
+        const connMinX = Math.min(connAnchors.from.x, connAnchors.to.x);
+        const connMinY = Math.min(connAnchors.from.y, connAnchors.to.y);
+        const connMaxX = Math.max(connAnchors.from.x, connAnchors.to.x);
+        const connMaxY = Math.max(connAnchors.from.y, connAnchors.to.y);
+
+        return { x: connMinX, y: connMinY, width: connMaxX - connMinX || 10, height: connMaxY - connMinY || 10 };
+      }
+
+      default:
+        return { x: obj.x || 0, y: obj.y || 0, width: 100, height: 100 };
+    }
+  }
+
+  drawPreview(x, y) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(this.offsetX, this.offsetY);
+    ctx.scale(this.scale, this.scale);
+
+    ctx.strokeStyle = this.strokeColor;
+    ctx.lineWidth = this.strokeWidth;
+    ctx.setLineDash([5, 5]);
+    ctx.globalAlpha = 0.6;
+
+    switch (this.currentTool) {
+      case 'draw':
+        if (this.currentPath.length > 1) {
+          ctx.beginPath();
+          ctx.moveTo(this.currentPath[0].x, this.currentPath[0].y);
+          for (let i = 1; i < this.currentPath.length; i++) {
+            ctx.lineTo(this.currentPath[i].x, this.currentPath[i].y);
+          }
+          ctx.stroke();
+        }
+        break;
+
+      case 'line':
+        ctx.beginPath();
+        ctx.moveTo(this.startX, this.startY);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        break;
+
+      case 'rect':
+        ctx.strokeRect(this.startX, this.startY, x - this.startX, y - this.startY);
+        break;
+
+      case 'ellipse':
+        const rx = Math.abs(x - this.startX) / 2;
+        const ry = Math.abs(y - this.startY) / 2;
+        const cx = this.startX + (x - this.startX) / 2;
+        const cy = this.startY + (y - this.startY) / 2;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+    }
+
+    ctx.restore();
+  }
+
+  // Zoom
+  zoom(factor) {
+    const centerX = this.canvas.width / 2;
+    const centerY = this.canvas.height / 2;
+
+    const newScale = Math.min(Math.max(this.scale * factor, this.minScale), this.maxScale);
+    const scaleDiff = newScale / this.scale;
+
+    this.offsetX = centerX - (centerX - this.offsetX) * scaleDiff;
+    this.offsetY = centerY - (centerY - this.offsetY) * scaleDiff;
+    this.scale = newScale;
+
+    this.updateZoomDisplay();
+    this.render();
+  }
+
+  resetZoom() {
+    this.scale = 1;
+    this.offsetX = 0;
+    this.offsetY = 0;
+    this.updateZoomDisplay();
+    this.render();
+  }
+
+  updateZoomDisplay() {
+    document.getElementById('canvasZoomLevel').textContent = Math.round(this.scale * 100) + '%';
+  }
+
+  // History (Undo/Redo)
+  saveState() {
+    this.history = this.history.slice(0, this.historyIndex + 1);
+
+    const state = this.objects.map(obj => {
+      const clone = { ...obj };
+      if (clone.type === 'image') delete clone.imageElement;
+      if (clone.type === 'path') clone.points = [...obj.points];
+      return clone;
+    });
+
+    this.history.push(JSON.stringify(state));
+    this.historyIndex++;
+
+    if (this.history.length > this.maxHistory) {
+      this.history.shift();
+      this.historyIndex--;
+    }
+
+    // Save to page
+    this.app.saveCanvasData();
+  }
+
+  undo() {
+    if (this.historyIndex > 0) {
+      this.historyIndex--;
+      this.restoreState();
+    }
+  }
+
+  redo() {
+    if (this.historyIndex < this.history.length - 1) {
+      this.historyIndex++;
+      this.restoreState();
+    }
+  }
+
+  restoreState() {
+    const state = JSON.parse(this.history[this.historyIndex]);
+
+    this.objects = state.map(obj => {
+      if (obj.type === 'image' && obj.src) {
+        const img = new Image();
+        img.src = obj.src;
+        obj.imageElement = img;
+      }
+      return obj;
+    });
+
+    this.selectedObjects = [];
+    this.updateStatus();
+    this.render();
+
+    // Save to page
+    this.app.saveCanvasData();
+  }
+
+  clearAll() {
+    if (this.objects.length === 0) return;
+
+    if (confirm('Clear all objects?')) {
+      this.objects = [];
+      this.selectedObjects = [];
+      this.saveState();
+      this.updateStatus();
+      this.render();
+    }
+  }
+
+  // UI Updates
+  updateStatus() {
+    document.getElementById('canvasStatusTool').textContent = `TOOL: ${this.currentTool.toUpperCase()}`;
+    document.getElementById('canvasStatusObjects').textContent = `OBJECTS: ${this.objects.length}`;
+    document.getElementById('canvasStatusSelected').textContent = `SELECTED: ${this.selectedObjects.length}`;
   }
 }
 
