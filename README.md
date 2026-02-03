@@ -35,6 +35,16 @@ Open http://localhost:3000 in your browser.
 
 All data is stored locally in `hacknote.db` (SQLite). Data persists across restarts.
 
+## Demo Video
+
+https://github.com/user-attachments/assets/c8422bce-0781-4e86-a837-98aaad9cc1d7
+
+To regenerate the demo locally (requires the server running on port 3000):
+
+```bash
+npm run demo
+```
+
 ## License
 
 MIT
