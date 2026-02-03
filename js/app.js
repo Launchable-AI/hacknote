@@ -13,13 +13,18 @@ class HackNote {
     // Settings
     this.settings = {
       accentColor: '#00ff9d',
-      enableGlow: true
+      enableGlow: true,
+      themeMode: 'cyber' // 'cyber' or 'professional'
     };
 
     // State
     this.contextMenuTarget = null;
     this.editingCard = null;
     this.draggedCard = null;
+
+    // Modal state
+    this.renameCallback = null;
+    this.confirmCallback = null;
 
     // Initialize
     this.init();
@@ -302,6 +307,28 @@ class HackNote {
       this.saveData();
     });
 
+    // Theme toggle buttons
+    document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.theme-toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.settings.themeMode = btn.dataset.theme;
+        this.applyTheme(true); // true = switching themes, apply default colors
+        this.saveData();
+      });
+    });
+
+    // Professional color options
+    document.querySelectorAll('.pro-colors .color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.settings.accentColor = btn.dataset.color;
+        this.applySettings();
+        this.saveData();
+      });
+    });
+
     // Export
     document.getElementById('exportBtn').addEventListener('click', () => {
       this.exportData();
@@ -328,6 +355,40 @@ class HackNote {
       if (e.target.id === 'modal-overlay') {
         this.hideAllModals();
       }
+    });
+
+    // Rename modal events
+    const renameInput = document.getElementById('renameInput');
+    const renamePreview = document.getElementById('renamePreview');
+
+    renameInput.addEventListener('input', (e) => {
+      renamePreview.textContent = e.target.value || '---';
+    });
+
+    renameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.confirmRename();
+      }
+    });
+
+    document.getElementById('renameCancelBtn').addEventListener('click', () => {
+      this.hideModal('renameModal');
+      this.renameCallback = null;
+    });
+
+    document.getElementById('renameConfirmBtn').addEventListener('click', () => {
+      this.confirmRename();
+    });
+
+    // Confirm modal events
+    document.getElementById('confirmCancelBtn').addEventListener('click', () => {
+      this.hideModal('confirmModal');
+      this.confirmCallback = null;
+    });
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', () => {
+      this.executeConfirm();
     });
 
     // Card modal buttons
@@ -536,27 +597,40 @@ class HackNote {
     }
   }
 
-  deletePage(id) {
-    if (!confirm('Delete this page?')) return;
-
-    // Add deletion animation to nav item
-    const navItem = document.querySelector(`.nav-item[data-id="${id}"]`);
-    if (navItem) {
-      navItem.classList.add('deleting');
-    }
-
-    setTimeout(() => {
-      this.pages = this.pages.filter(p => p.id !== id);
-      this.saveData();
-
-      if (this.currentPage?.id === id) {
-        this.currentPage = null;
-        this.showWelcome();
+  deletePage(id, skipConfirm = false) {
+    const doDelete = () => {
+      // Add deletion animation to nav item
+      const navItem = document.querySelector(`.nav-item[data-id="${id}"]`);
+      if (navItem) {
+        navItem.classList.add('deleting');
       }
 
-      this.renderSidebar();
-      this.updateStats();
-    }, navItem ? 500 : 0);
+      setTimeout(() => {
+        this.pages = this.pages.filter(p => p.id !== id);
+        this.saveData();
+
+        if (this.currentPage?.id === id) {
+          this.currentPage = null;
+          this.showWelcome();
+        }
+
+        this.renderSidebar();
+        this.updateStats();
+      }, navItem ? 500 : 0);
+    };
+
+    if (skipConfirm) {
+      doDelete();
+    } else {
+      const page = this.pages.find(p => p.id === id);
+      const pageName = page ? page.title : 'this page';
+
+      this.showConfirmModal(
+        'DELETE PAGE',
+        `Delete "${pageName}"?`,
+        doDelete
+      );
+    }
   }
 
   showWelcome() {
@@ -743,27 +817,33 @@ class HackNote {
   deleteCard() {
     if (!this.editingCard || !this.currentPage?.cards) return;
 
-    if (!confirm('Delete this card?')) return;
-
+    const cardTitle = this.editingCard.title || 'this card';
     const cardId = this.editingCard.id;
-    this.hideModal('cardModal');
 
-    // Add deletion animation
-    const cardEl = document.querySelector(`.board-card[data-id="${cardId}"]`);
-    if (cardEl) {
-      cardEl.classList.add('deleting');
-      setTimeout(() => {
-        this.currentPage.cards = this.currentPage.cards.filter(c => c.id !== cardId);
-        this.saveData();
-        this.renderBoard();
-      }, 400);
-    } else {
-      this.currentPage.cards = this.currentPage.cards.filter(c => c.id !== cardId);
-      this.saveData();
-      this.renderBoard();
-    }
+    this.showConfirmModal(
+      'DELETE CARD',
+      `Delete "${cardTitle}"?`,
+      () => {
+        this.hideModal('cardModal');
 
-    this.editingCard = null;
+        // Add deletion animation
+        const cardEl = document.querySelector(`.board-card[data-id="${cardId}"]`);
+        if (cardEl) {
+          cardEl.classList.add('deleting');
+          setTimeout(() => {
+            this.currentPage.cards = this.currentPage.cards.filter(c => c.id !== cardId);
+            this.saveData();
+            this.renderBoard();
+          }, 400);
+        } else {
+          this.currentPage.cards = this.currentPage.cards.filter(c => c.id !== cardId);
+          this.saveData();
+          this.renderBoard();
+        }
+
+        this.editingCard = null;
+      }
+    );
   }
 
   moveCard(cardId, newStatus) {
@@ -912,18 +992,30 @@ class HackNote {
 
     switch (action) {
       case 'rename':
-        const name = prompt('Enter new name:');
-        if (name) {
+        let currentName = '';
+        let modalTitle = 'RENAME';
+
+        if (type === 'workspace') {
+          const ws = this.workspaces.find(w => w.id === id);
+          currentName = ws ? ws.name : '';
+          modalTitle = 'RENAME WORKSPACE';
+        } else {
+          const page = this.pages.find(p => p.id === id);
+          currentName = page ? page.title : '';
+          modalTitle = 'RENAME PAGE';
+        }
+
+        this.showRenameModal(modalTitle, currentName, (newName) => {
           if (type === 'workspace') {
             const ws = this.workspaces.find(w => w.id === id);
-            if (ws) ws.name = name;
+            if (ws) ws.name = newName;
           } else {
             const page = this.pages.find(p => p.id === id);
-            if (page) page.title = name;
+            if (page) page.title = newName;
           }
           this.saveData();
           this.renderSidebar();
-        }
+        });
         break;
 
       case 'duplicate':
@@ -945,19 +1037,35 @@ class HackNote {
 
       case 'delete':
         if (type === 'workspace' && this.workspaces.length > 1) {
-          if (confirm('Delete this workspace and all its pages?')) {
-            this.pages = this.pages.filter(p => p.workspaceId !== id);
-            this.workspaces = this.workspaces.filter(w => w.id !== id);
-            if (this.currentWorkspace?.id === id) {
-              this.currentWorkspace = this.workspaces[0];
-              this.currentPage = null;
-              this.showWelcome();
+          const ws = this.workspaces.find(w => w.id === id);
+          const wsName = ws ? ws.name : 'this workspace';
+
+          this.showConfirmModal(
+            'DELETE WORKSPACE',
+            `Delete "${wsName}" and all its pages?`,
+            () => {
+              this.pages = this.pages.filter(p => p.workspaceId !== id);
+              this.workspaces = this.workspaces.filter(w => w.id !== id);
+              if (this.currentWorkspace?.id === id) {
+                this.currentWorkspace = this.workspaces[0];
+                this.currentPage = null;
+                this.showWelcome();
+              }
+              this.saveData();
+              this.renderSidebar();
             }
-            this.saveData();
-            this.renderSidebar();
-          }
+          );
         } else if (type === 'page') {
-          this.deletePage(id);
+          const page = this.pages.find(p => p.id === id);
+          const pageName = page ? page.title : 'this page';
+
+          this.showConfirmModal(
+            'DELETE PAGE',
+            `Delete "${pageName}"?`,
+            () => {
+              this.deletePage(id, true);
+            }
+          );
         }
         break;
     }
@@ -984,6 +1092,63 @@ class HackNote {
   hideAllModals() {
     document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
     document.getElementById('modal-overlay').classList.remove('visible');
+    this.renameCallback = null;
+    this.confirmCallback = null;
+  }
+
+  // ============================================
+  // RENAME MODAL
+  // ============================================
+
+  showRenameModal(title, currentValue, callback) {
+    document.getElementById('renameModalTitle').textContent = title;
+    const input = document.getElementById('renameInput');
+    const preview = document.getElementById('renamePreview');
+
+    input.value = currentValue;
+    preview.textContent = currentValue || '---';
+    this.renameCallback = callback;
+
+    this.showModal('renameModal');
+
+    // Focus input after animation
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 100);
+  }
+
+  confirmRename() {
+    const input = document.getElementById('renameInput');
+    const value = input.value.trim();
+
+    if (value && this.renameCallback) {
+      this.renameCallback(value);
+    }
+
+    this.hideModal('renameModal');
+    this.renameCallback = null;
+  }
+
+  // ============================================
+  // CONFIRM MODAL
+  // ============================================
+
+  showConfirmModal(title, message, callback) {
+    document.getElementById('confirmModalTitle').textContent = title;
+    document.getElementById('confirmMessage').textContent = message;
+    this.confirmCallback = callback;
+
+    this.showModal('confirmModal');
+  }
+
+  executeConfirm() {
+    if (this.confirmCallback) {
+      this.confirmCallback();
+    }
+
+    this.hideModal('confirmModal');
+    this.confirmCallback = null;
   }
 
   // ============================================
@@ -991,6 +1156,9 @@ class HackNote {
   // ============================================
 
   applySettings() {
+    // Apply theme mode first
+    this.applyTheme();
+
     // Apply accent color
     document.documentElement.style.setProperty('--accent', this.settings.accentColor);
     document.documentElement.style.setProperty('--accent-dim', this.settings.accentColor + '40');
@@ -1004,6 +1172,70 @@ class HackNote {
 
     // Glow
     document.getElementById('enableGlow').checked = this.settings.enableGlow;
+  }
+
+  applyTheme(switchingTheme = false) {
+    const themeMode = this.settings.themeMode;
+    const isProfessional = themeMode === 'professional' || themeMode === 'professional-dark';
+
+    // Remove all theme classes first
+    document.body.classList.remove('theme-professional', 'theme-professional-dark');
+
+    // Add appropriate theme class
+    if (themeMode === 'professional') {
+      document.body.classList.add('theme-professional');
+    } else if (themeMode === 'professional-dark') {
+      document.body.classList.add('theme-professional-dark');
+    }
+
+    // Update theme toggle buttons
+    document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.theme === themeMode);
+    });
+
+    // Show/hide appropriate color options
+    const cyberColors = document.querySelector('.color-options:not(.pro-colors)');
+    const proColors = document.querySelector('.pro-colors');
+
+    if (isProfessional) {
+      cyberColors.classList.add('hidden');
+      proColors.classList.remove('hidden');
+
+      // Only set default accent when actually switching themes, not on every apply
+      if (switchingTheme) {
+        const cyberAccents = ['#00ff9d', '#00ffff', '#ff00ff', '#ff6b00', '#ffff00'];
+        if (cyberAccents.includes(this.settings.accentColor)) {
+          this.settings.accentColor = '#2563eb';
+        }
+      }
+    } else {
+      cyberColors.classList.remove('hidden');
+      proColors.classList.add('hidden');
+
+      // Only set default accent when actually switching themes
+      if (switchingTheme) {
+        const proAccents = ['#2563eb', '#7c3aed', '#059669', '#dc2626', '#0891b2'];
+        if (proAccents.includes(this.settings.accentColor)) {
+          this.settings.accentColor = '#00ff9d';
+        }
+      }
+    }
+
+    // Apply accent color to CSS variables
+    document.documentElement.style.setProperty('--accent', this.settings.accentColor);
+    document.documentElement.style.setProperty('--accent-dim', this.settings.accentColor + '40');
+
+    if (isProfessional) {
+      document.documentElement.style.setProperty('--accent-glow', 'none');
+    } else {
+      document.documentElement.style.setProperty('--accent-glow',
+        `0 0 10px ${this.settings.accentColor}, 0 0 20px ${this.settings.accentColor}40`);
+    }
+
+    // Update color buttons
+    document.querySelectorAll('.color-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.color === this.settings.accentColor);
+    });
   }
 
   // ============================================
@@ -1068,23 +1300,31 @@ class HackNote {
           throw new Error('Invalid data format');
         }
 
-        if (confirm('This will replace all existing data. Continue?')) {
-          this.workspaces = data.workspaces;
-          this.pages = data.pages;
-          this.settings = { ...this.settings, ...data.settings };
-          this.currentWorkspace = this.workspaces[0];
-          this.currentPage = null;
+        this.showConfirmModal(
+          'IMPORT DATA',
+          'This will replace all existing data. Continue?',
+          () => {
+            this.workspaces = data.workspaces;
+            this.pages = data.pages;
+            this.settings = { ...this.settings, ...data.settings };
+            this.currentWorkspace = this.workspaces[0];
+            this.currentPage = null;
 
-          this.saveData();
-          this.renderSidebar();
-          this.showWelcome();
-          this.applySettings();
+            this.saveData();
+            this.renderSidebar();
+            this.showWelcome();
+            this.applySettings();
 
-          console.log('%c[IMPORT] Data imported successfully', 'color: #00ff9d');
-        }
+            console.log('%c[IMPORT] Data imported successfully', 'color: #00ff9d');
+          }
+        );
       } catch (err) {
         console.error('Failed to import:', err);
-        alert('Failed to import data. Invalid file format.');
+        this.showConfirmModal(
+          'IMPORT ERROR',
+          'Failed to import data. Invalid file format.',
+          () => {}
+        );
       }
     };
     reader.readAsText(file);
@@ -1609,12 +1849,17 @@ class CanvasEditor {
             case 't': this.selectTool('text'); break;
             case 'i': this.selectTool('image'); break;
             case 'c': this.selectTool('connect'); break;
+            case 'f': this.toggleFullscreen(); break;
             case 'delete':
             case 'backspace':
               this.deleteSelected();
               break;
             case 'escape':
               this.deselectAll();
+              // Exit fullscreen if active
+              if (document.getElementById('canvasView').classList.contains('fullscreen')) {
+                this.toggleFullscreen();
+              }
               break;
           }
         }
@@ -1657,6 +1902,9 @@ class CanvasEditor {
     document.getElementById('canvasZoomIn').addEventListener('click', () => this.zoom(1.2));
     document.getElementById('canvasZoomOut').addEventListener('click', () => this.zoom(0.8));
     document.getElementById('canvasZoomReset').addEventListener('click', () => this.resetZoom());
+
+    // Fullscreen toggle
+    document.getElementById('canvasFullscreen').addEventListener('click', () => this.toggleFullscreen());
   }
 
   bindProperties() {
@@ -2411,7 +2659,11 @@ class CanvasEditor {
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      alert('Image too large. Max size: 10MB');
+      this.app.showConfirmModal(
+        'IMAGE TOO LARGE',
+        'Image exceeds maximum size of 10MB. Please choose a smaller image.',
+        () => {}
+      );
       return;
     }
 
@@ -2754,6 +3006,26 @@ class CanvasEditor {
     document.getElementById('canvasZoomLevel').textContent = Math.round(this.scale * 100) + '%';
   }
 
+  // Fullscreen
+  toggleFullscreen() {
+    const canvasView = document.getElementById('canvasView');
+    const expandIcon = document.querySelector('.fullscreen-icon.expand');
+    const collapseIcon = document.querySelector('.fullscreen-icon.collapse');
+
+    canvasView.classList.toggle('fullscreen');
+    const isFullscreen = canvasView.classList.contains('fullscreen');
+
+    // Toggle icons
+    expandIcon.classList.toggle('hidden', isFullscreen);
+    collapseIcon.classList.toggle('hidden', !isFullscreen);
+
+    // Resize canvas after toggle
+    setTimeout(() => {
+      this.resizeCanvas();
+      this.render();
+    }, 50);
+  }
+
   // History (Undo/Redo)
   saveState() {
     this.history = this.history.slice(0, this.historyIndex + 1);
@@ -2814,13 +3086,17 @@ class CanvasEditor {
   clearAll() {
     if (this.objects.length === 0) return;
 
-    if (confirm('Clear all objects?')) {
-      this.objects = [];
-      this.selectedObjects = [];
-      this.saveState();
-      this.updateStatus();
-      this.render();
-    }
+    this.app.showConfirmModal(
+      'CLEAR CANVAS',
+      `Clear all ${this.objects.length} objects from canvas?`,
+      () => {
+        this.objects = [];
+        this.selectedObjects = [];
+        this.saveState();
+        this.updateStatus();
+        this.render();
+      }
+    );
   }
 
   // UI Updates

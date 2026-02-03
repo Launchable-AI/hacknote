@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HACKNOTE // Project Management</title>
   <link rel="stylesheet" href="css/style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div id="app">
@@ -297,6 +297,13 @@
                 <button class="canvas-zoom-btn" id="canvasZoomIn">+</button>
                 <button class="canvas-zoom-btn" id="canvasZoomReset" title="Reset Zoom">&#x2299;</button>
               </div>
+
+              <div class="canvas-toolbar-section fullscreen">
+                <button class="canvas-fullscreen-btn" id="canvasFullscreen" title="Toggle Fullscreen [F]">
+                  <span class="fullscreen-icon expand">&#x26F6;</span>
+                  <span class="fullscreen-icon collapse hidden">&#x2716;</span>
+                </button>
+              </div>
             </div>
 
             <div class="canvas-container" id="canvasContainer">
@@ -361,6 +368,26 @@
         </div>
         <div class="modal-content">
           <div class="form-group">
+            <label>THEME STYLE</label>
+            <div class="theme-toggle-container">
+              <button class="theme-toggle-btn active" data-theme="cyber">
+                <span class="theme-icon">&#x2B21;</span>
+                <span class="theme-name">Cyberpunk</span>
+                <span class="theme-desc">Neon hacker</span>
+              </button>
+              <button class="theme-toggle-btn" data-theme="professional">
+                <span class="theme-icon">&#x2600;</span>
+                <span class="theme-name">Light</span>
+                <span class="theme-desc">Clean & bright</span>
+              </button>
+              <button class="theme-toggle-btn" data-theme="professional-dark">
+                <span class="theme-icon">&#x263D;</span>
+                <span class="theme-name">Dark</span>
+                <span class="theme-desc">Modern dark</span>
+              </button>
+            </div>
+          </div>
+          <div class="form-group accent-colors-group">
             <label>THEME ACCENT</label>
             <div class="color-options">
               <button class="color-btn active" data-color="#00ff9d" style="background:#00ff9d"></button>
@@ -369,8 +396,15 @@
               <button class="color-btn" data-color="#ff6b00" style="background:#ff6b00"></button>
               <button class="color-btn" data-color="#ffff00" style="background:#ffff00"></button>
             </div>
+            <div class="color-options pro-colors hidden">
+              <button class="color-btn" data-color="#2563eb" style="background:#2563eb"></button>
+              <button class="color-btn" data-color="#7c3aed" style="background:#7c3aed"></button>
+              <button class="color-btn" data-color="#059669" style="background:#059669"></button>
+              <button class="color-btn" data-color="#dc2626" style="background:#dc2626"></button>
+              <button class="color-btn" data-color="#0891b2" style="background:#0891b2"></button>
+            </div>
           </div>
-          <div class="form-group">
+          <div class="form-group glow-option">
             <label class="checkbox-label">
               <input type="checkbox" id="enableGlow" checked>
               <span>ENABLE GLOW EFFECTS</span>
@@ -380,6 +414,78 @@
         <div class="modal-actions">
           <button class="modal-btn confirm" data-close="settingsModal">CLOSE</button>
         </div>
+      </div>
+
+      <!-- Rename Modal -->
+      <div id="renameModal" class="modal rename-modal hidden">
+        <div class="modal-scanline"></div>
+        <div class="modal-header">
+          <div class="modal-header-decoration"></div>
+          <span class="modal-title" id="renameModalTitle">RENAME</span>
+          <button class="modal-close" data-close="renameModal">
+            <span class="close-icon"></span>
+          </button>
+        </div>
+        <div class="modal-content">
+          <div class="rename-input-wrapper">
+            <div class="input-decoration left"></div>
+            <input type="text" id="renameInput" class="rename-input" placeholder="Enter new name..." autocomplete="off" spellcheck="false">
+            <div class="input-decoration right"></div>
+          </div>
+          <div class="rename-preview">
+            <span class="preview-label">PREVIEW:</span>
+            <span class="preview-text" id="renamePreview">---</span>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="renameCancelBtn">
+            <span class="btn-glitch" data-text="CANCEL">CANCEL</span>
+          </button>
+          <button class="modal-btn confirm" id="renameConfirmBtn">
+            <span class="btn-glitch" data-text="CONFIRM">CONFIRM</span>
+          </button>
+        </div>
+        <div class="modal-corner tl"></div>
+        <div class="modal-corner tr"></div>
+        <div class="modal-corner bl"></div>
+        <div class="modal-corner br"></div>
+      </div>
+
+      <!-- Confirm Dialog Modal -->
+      <div id="confirmModal" class="modal confirm-modal hidden">
+        <div class="modal-scanline"></div>
+        <div class="modal-header danger">
+          <div class="modal-header-decoration"></div>
+          <span class="modal-title">
+            <span class="warning-icon">&#x26A0;</span>
+            <span id="confirmModalTitle">CONFIRM ACTION</span>
+          </span>
+          <button class="modal-close" data-close="confirmModal">
+            <span class="close-icon"></span>
+          </button>
+        </div>
+        <div class="modal-content">
+          <div class="confirm-message" id="confirmMessage">
+            Are you sure you want to proceed?
+          </div>
+          <div class="confirm-warning">
+            <div class="warning-bar"></div>
+            <span class="warning-text">This action cannot be undone</span>
+            <div class="warning-bar"></div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" id="confirmCancelBtn">
+            <span class="btn-glitch" data-text="ABORT">ABORT</span>
+          </button>
+          <button class="modal-btn danger" id="confirmDeleteBtn">
+            <span class="btn-glitch" data-text="DELETE">DELETE</span>
+          </button>
+        </div>
+        <div class="modal-corner tl"></div>
+        <div class="modal-corner tr"></div>
+        <div class="modal-corner bl"></div>
+        <div class="modal-corner br"></div>
       </div>
     </div>
 
