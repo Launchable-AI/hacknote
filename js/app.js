@@ -13,7 +13,8 @@ class HackNote {
     // Settings
     this.settings = {
       accentColor: '#00ff9d',
-      enableGlow: true
+      enableGlow: true,
+      theme: 'dark'
     };
 
     // State
@@ -54,7 +55,7 @@ class HackNote {
         this.workspaces.push({
           id: this.generateId(),
           name: 'My Workspace',
-          icon: '\u2B21',
+          icon: '\u2302',
           createdAt: Date.now()
         });
         this.saveData();
@@ -307,6 +308,13 @@ class HackNote {
       this.saveData();
     });
 
+    // Light mode toggle
+    document.getElementById('enableLightMode').addEventListener('change', (e) => {
+      this.settings.theme = e.target.checked ? 'light' : 'dark';
+      this.applySettings();
+      this.saveData();
+    });
+
     // Export
     document.getElementById('exportBtn').addEventListener('click', () => {
       this.exportData();
@@ -414,7 +422,7 @@ class HackNote {
     const workspace = {
       id: this.generateId(),
       name: 'New Workspace',
-      icon: '\u2B21',
+      icon: '\u2302',
       createdAt: Date.now()
     };
 
@@ -511,7 +519,7 @@ class HackNote {
       notes: '\u270E',
       todo: '\u2611',
       board: '\u25A6',
-      canvas: '\u2B21'
+      canvas: '\u25B3'
     };
     this.currentPage.icon = icons[type] || '\u25A2';
     document.getElementById('pageIcon').textContent = this.currentPage.icon;
@@ -1028,6 +1036,25 @@ class HackNote {
 
     // Glow
     document.getElementById('enableGlow').checked = this.settings.enableGlow;
+
+    // Theme
+    this.applyTheme();
+  }
+
+  applyTheme() {
+    const theme = this.settings.theme || 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+
+    // Update checkbox in settings modal
+    const themeCheckbox = document.getElementById('enableLightMode');
+    if (themeCheckbox) {
+      themeCheckbox.checked = theme === 'light';
+    }
+
+    // Forward to canvas iframe
+    if (this.canvasEditor) {
+      this.canvasEditor.setTheme(theme);
+    }
   }
 
   // ============================================
@@ -1482,6 +1509,8 @@ class IframeCanvasEditor {
       switch (type) {
         case 'hackerpad:ready':
           this.ready = true;
+          // Sync theme with parent
+          this.setTheme(this.app.settings.theme || 'dark');
           if (this.pendingLoad) {
             this.sendLoad(this.pendingLoad);
             this.pendingLoad = null;
@@ -1524,6 +1553,15 @@ class IframeCanvasEditor {
       this.iframe.contentWindow.postMessage({
         type: 'hackerpad:load',
         payload: data
+      }, '*');
+    }
+  }
+
+  setTheme(theme) {
+    if (this.iframe && this.iframe.contentWindow) {
+      this.iframe.contentWindow.postMessage({
+        type: 'hackerpad:setTheme',
+        payload: theme
       }, '*');
     }
   }
