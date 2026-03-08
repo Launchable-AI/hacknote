@@ -1816,6 +1816,7 @@ body {
   flex-direction: column;
   height: calc(100vh - 200px);
   min-height: 500px;
+  position: relative;
 }
 
 .canvas-container {
@@ -1824,4 +1825,71 @@ body {
   overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: 8px;
+}
+
+/* Expand / collapse button — bottom-right to avoid hackerpad toolbar */
+.canvas-expand-btn {
+  position: absolute;
+  bottom: 40px;
+  right: 8px;
+  z-index: 200;
+  width: 32px;
+  height: 32px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.canvas-expand-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: var(--accent-glow);
+  opacity: 1;
+}
+
+/* Canvas fullscreen mode */
+#app.canvas-fullscreen {
+  display: block;
+}
+
+#app.canvas-fullscreen #sidebar,
+#app.canvas-fullscreen #page-header,
+#app.canvas-fullscreen .page-title-wrapper,
+#app.canvas-fullscreen .page-type-bar {
+  display: none !important;
+}
+
+#app.canvas-fullscreen #main-content {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+#app.canvas-fullscreen #page-content {
+  padding: 0;
+  height: 100vh;
+}
+
+#app.canvas-fullscreen .page-editor {
+  max-width: none;
+  margin: 0;
+  height: 100vh;
+}
+
+#app.canvas-fullscreen #canvasView {
+  height: 100vh;
+  min-height: unset;
+}
+
+#app.canvas-fullscreen .canvas-container {
+  border: none;
+  border-radius: 0;
 }

@@ -103,6 +103,11 @@ class HackNote {
       document.getElementById('sidebar').classList.toggle('collapsed');
     });
 
+    // Canvas expand toggle
+    document.getElementById('canvasExpandBtn').addEventListener('click', () => {
+      this.toggleCanvasFullscreen();
+    });
+
     // Add workspace
     document.getElementById('addWorkspace').addEventListener('click', () => {
       this.createWorkspace();
@@ -369,8 +374,22 @@ class HackNote {
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        // Exit canvas fullscreen first, then modals
+        if (document.getElementById('app').classList.contains('canvas-fullscreen')) {
+          this.toggleCanvasFullscreen();
+          return;
+        }
         this.hideAllModals();
         this.hideContextMenu();
+      }
+
+      // F: Toggle canvas fullscreen (when canvas is active and not typing)
+      if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = document.activeElement.tagName;
+        const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement.isContentEditable;
+        if (!isTyping && this.currentPage && this.currentPage.type === 'canvas') {
+          this.toggleCanvasFullscreen();
+        }
       }
 
       // Ctrl/Cmd + N: New page
@@ -470,6 +489,11 @@ class HackNote {
 
   setPageType(type, save = true) {
     if (!this.currentPage) return;
+
+    // Exit canvas fullscreen when switching away from canvas
+    if (type !== 'canvas') {
+      document.getElementById('app').classList.remove('canvas-fullscreen');
+    }
 
     // Update type buttons
     document.querySelectorAll('.type-btn').forEach(btn => {
@@ -1405,6 +1429,14 @@ class HackNote {
 
   saveCanvasData() {
     // Auto-save is handled by the postMessage listener in IframeCanvasEditor
+  }
+
+  toggleCanvasFullscreen() {
+    const app = document.getElementById('app');
+    const btn = document.getElementById('canvasExpandBtn');
+    const isFullscreen = app.classList.toggle('canvas-fullscreen');
+    btn.innerHTML = isFullscreen ? '\u2716' : '\u26F6';
+    btn.title = isFullscreen ? 'Exit Fullscreen [F]' : 'Expand Canvas [F]';
   }
 
   // ============================================
