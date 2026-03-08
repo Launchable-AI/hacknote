@@ -1497,7 +1497,9 @@ class IframeCanvasEditor {
     if (this.iframe) return;
 
     this.iframe = document.createElement('iframe');
-    this.iframe.src = '/canvas/index.html?embedded=true';
+    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const canvasBase = isLocal ? '/canvas' : 'https://hackerpad.ink';
+    this.iframe.src = canvasBase + '/index.html?embedded=true';
     this.iframe.style.cssText = 'width: 100%; height: 100%; border: none;';
     this.container.appendChild(this.iframe);
   }
