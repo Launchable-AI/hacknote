@@ -1,0 +1,3 @@
+[submodule "hackerpad"]
+	path = hackerpad
+	url = https://github.com/Launchable-AI/hackerpad.git

@@ -8,6 +8,9 @@ const app = express();
 // Parse JSON bodies
 app.use(express.json({ limit: '50mb' }));
 
+// Serve hackerpad canvas at /canvas
+app.use('/canvas', express.static(path.join(__dirname, 'hackerpad', 'public')));
+
 // Serve static files from current directory
 app.use(express.static(__dirname));
 
