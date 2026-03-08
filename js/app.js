@@ -892,7 +892,13 @@ class HackNote {
     const workspacePages = this.pages.filter(p => p.workspaceId === this.currentWorkspace?.id);
 
     if (workspacePages.length === 0) {
-      pageList.innerHTML = '<div class="nav-item" style="opacity: 0.5; cursor: default;">No pages yet</div>';
+      pageList.innerHTML = '<div class="nav-item empty-pages-hint"><span class="nav-item-icon">&#x25CC;</span><span class="nav-item-text">No pages yet</span></div>';
+      const hint = pageList.querySelector('.empty-pages-hint');
+      const hintText = hint.querySelector('.nav-item-text');
+      const hintIcon = hint.querySelector('.nav-item-icon');
+      hint.addEventListener('click', () => this.createPage());
+      hint.addEventListener('mouseenter', () => { hintText.textContent = '+ Create new page'; hintIcon.textContent = '\u2726'; });
+      hint.addEventListener('mouseleave', () => { hintText.textContent = 'No pages yet'; hintIcon.textContent = '\u25CC'; });
     } else {
       pageList.innerHTML = workspacePages.map(page => `
         <div class="nav-item ${page.id === this.currentPage?.id ? 'active' : ''}" data-id="${page.id}" data-type="page">

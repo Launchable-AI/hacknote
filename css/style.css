@@ -1528,6 +1528,47 @@ body {
   text-shadow: var(--accent-glow);
 }
 
+/* Empty pages hint */
+.empty-pages-hint {
+  opacity: 0.4;
+  cursor: pointer !important;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.empty-pages-hint .nav-item-text {
+  transition: all 0.3s ease;
+}
+
+.empty-pages-hint .nav-item-icon {
+  transition: all 0.3s ease;
+}
+
+.empty-pages-hint:hover {
+  opacity: 1;
+  border-left-color: var(--accent) !important;
+  background: var(--bg-hover);
+}
+
+.empty-pages-hint:hover .nav-item-text {
+  color: var(--accent);
+  text-shadow: var(--accent-glow);
+  letter-spacing: 1px;
+}
+
+.empty-pages-hint:hover .nav-item-icon {
+  color: var(--accent);
+  text-shadow: var(--accent-glow);
+  animation: spinIn 0.4s ease-out;
+}
+
+@keyframes spinIn {
+  0% { transform: rotate(0deg) scale(0.5); opacity: 0; }
+  60% { transform: rotate(200deg) scale(1.2); }
+  100% { transform: rotate(180deg) scale(1); opacity: 1; }
+}
+
 /* ============================================
    DRAG AND DROP STATES
    ============================================ */
